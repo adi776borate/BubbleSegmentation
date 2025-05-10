@@ -135,11 +135,14 @@ def train_one_epoch(model, optimizer, criterion, train_loader, epoch, config, wr
         if not isinstance(batch_data, (list, tuple)) or len(batch_data) != 5:
             continue
 
-        data, targets, _, _, _ = batch_data
+        data, targets, _, _, filenames = batch_data
         data, targets = data.to(config.DEVICE), targets.to(config.DEVICE)
 
         if targets.ndim == 3:
             targets = targets.unsqueeze(1)  # Ensure shape [B, 1, H, W]
+
+        # Extract pulse numbers
+        pulses = torch.tensor([int(p.split('US')[1].split('_')[0]) for p in filenames]).float().to(config.DEVICE)
 
         optimizer.zero_grad()
         outputs = model(data)
@@ -150,7 +153,11 @@ def train_one_epoch(model, optimizer, criterion, train_loader, epoch, config, wr
         else:
             raise ValueError(f"Unsupported model output type: {type(outputs)}")
 
-        loss = criterion(logits, targets)
+        # Use pulse if required by loss
+        if isinstance(criterion, DiceFocalWithPulsePriorLoss):
+            loss = criterion(logits, targets, pulses)
+        else:
+            loss = criterion(logits, targets)
 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -176,11 +183,14 @@ def validate_one_epoch(model, criterion, val_loader, epoch, config, writer):
             if not isinstance(batch_data, (list, tuple)) or len(batch_data) != 5:
                 continue
 
-            data, targets, _, _, _ = batch_data
+            data, targets, _, _, filenames = batch_data
             data, targets = data.to(config.DEVICE), targets.to(config.DEVICE)
 
             if targets.ndim == 3:
                 targets = targets.unsqueeze(1)
+
+            # Extract pulse numbers
+            pulses = torch.tensor([int(p.split('US')[1].split('_')[0]) for p in filenames]).float().to(config.DEVICE)
 
             outputs = model(data)
             if isinstance(outputs, dict) and 'out' in outputs:
@@ -190,24 +200,23 @@ def validate_one_epoch(model, criterion, val_loader, epoch, config, writer):
             else:
                 raise ValueError(f"Unsupported model output type: {type(outputs)}")
 
-            loss = criterion(logits, targets)
+            # Use pulse if required by loss
+            if isinstance(criterion, DiceFocalWithPulsePriorLoss):
+                loss = criterion(logits, targets, pulses)
+            else:
+                loss = criterion(logits, targets)
 
             total_val_loss += loss.item()
 
             preds = get_binary_segmentation_predictions(model, data)  # [B, H, W]
-            
+
             if targets.ndim == 4 and targets.shape[1] == 1:
-                targets = targets.squeeze(1)  # [B, H, W]
-            elif targets.ndim == 3:
-                pass  # Already correct
-            else:
+                targets = targets.squeeze(1)
+            elif targets.ndim != 3:
                 raise ValueError(f"Unexpected targets shape: {targets.shape}")
 
             batch_metrics = calculate_all_metrics(preds, targets)
-
-
             batch_metrics_list.append(batch_metrics)
-
             loop.set_postfix(loss=loss.item())
 
     if not batch_metrics_list:

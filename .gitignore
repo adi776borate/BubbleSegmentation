@@ -15,7 +15,5 @@ code_files/checkpoints/
 BubbleSegmentation/Data/
 *.pth'
 
-Data/
-
 ../BubbleSegmentation/code_files/checkpoints/
 ../BubbleSegmentation/code_files/logs/
