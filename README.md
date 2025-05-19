@@ -10,7 +10,6 @@ This repository contains the code and resources for the research project on segm
 ---
 
 ## Table of Contents
-## Table of Contents
 1.  [Introduction](#1-introduction)
 2.  [Motivation](#2-motivation)
 3.  [Methodology](#3-methodology)
