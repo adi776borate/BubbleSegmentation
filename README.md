@@ -23,7 +23,6 @@ This repository contains the code and resources for the research project on segm
 8.  [Future Work](#8-future-work)
 9.  [Citation](#9-citation)
 10. [Acknowledgments](#10-acknowledgments)
-11. [License](#11-license)
 
 ---
 
@@ -150,6 +149,3 @@ Our proposed method (DeepLabV3 with Dice-Focal Loss) demonstrates significant im
 *   This work was conducted at the [MUSE LAB]([https://sites.google.com/iitgn.ac.in/muse-lab/home](https://labs.iitgn.ac.in/muselaboratory/)), IIT Gandhinagar.
 *   We thank UChicago Radiology for collaboration and experimental data.
 *   We acknowledge Vishwas Trivedi (IIT Gandhinagar) for unlabelled ultrasound data.
-
-## 11. License
-This project is licensed under the MIT License. See the `LICENSE.md` file for details.
