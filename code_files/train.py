@@ -135,14 +135,21 @@ def train_one_epoch(model, optimizer, criterion, train_loader, epoch, config, wr
         if not isinstance(batch_data, (list, tuple)) or len(batch_data) != 5:
             continue
 
-        data, targets, _, _, filenames = batch_data
+        data, targets, _, image_paths,_ = batch_data
         data, targets = data.to(config.DEVICE), targets.to(config.DEVICE)
 
         if targets.ndim == 3:
             targets = targets.unsqueeze(1)  # Ensure shape [B, 1, H, W]
 
         # Extract pulse numbers
-        pulses = torch.tensor([int(p.split('US')[1].split('_')[0]) for p in filenames]).float().to(config.DEVICE)
+        def extract_pulse_number(path):
+            import re
+            match = re.search(r'US(\d+)', os.path.basename(path))
+            if not match:
+                raise ValueError(f"Pulse number could not be extracted from path: {path}")
+            return int(match.group(1))
+
+        pulses = torch.tensor([extract_pulse_number(p) for p in image_paths], dtype=torch.float32).to(config.DEVICE)
 
         optimizer.zero_grad()
         outputs = model(data)
@@ -169,28 +176,38 @@ def train_one_epoch(model, optimizer, criterion, train_loader, epoch, config, wr
     avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
     writer.add_scalar("Loss/Train", avg_loss, epoch)
     return avg_loss
-
-
+    
 def validate_one_epoch(model, criterion, val_loader, epoch, config, writer):
+    import re
     model.eval()
     loop = tqdm(val_loader, desc=f"Epoch {epoch+1}/{config.NUM_EPOCHS} (Validation)")
     batch_metrics_list = []
     total_val_loss = 0.0
     num_batches = len(val_loader)
 
+    def extract_pulse_number(path):
+        match = re.search(r'US(\d+)', os.path.basename(path))
+        if not match:
+            raise ValueError(f"Pulse number could not be extracted from path: {path}")
+        return int(match.group(1))
+
     with torch.no_grad():
         for batch_idx, batch_data in enumerate(loop):
             if not isinstance(batch_data, (list, tuple)) or len(batch_data) != 5:
                 continue
 
-            data, targets, _, _, filenames = batch_data
+            data, targets, _, image_paths, _ = batch_data
             data, targets = data.to(config.DEVICE), targets.to(config.DEVICE)
 
+            # Ensure targets are [B, 1, H, W] for loss
             if targets.ndim == 3:
                 targets = targets.unsqueeze(1)
+            targets = (targets > 0).long()
 
-            # Extract pulse numbers
-            pulses = torch.tensor([int(p.split('US')[1].split('_')[0]) for p in filenames]).float().to(config.DEVICE)
+            pulses = torch.tensor(
+                [extract_pulse_number(p) for p in image_paths],
+                dtype=torch.float32,
+            ).to(config.DEVICE)
 
             outputs = model(data)
             if isinstance(outputs, dict) and 'out' in outputs:
@@ -200,7 +217,6 @@ def validate_one_epoch(model, criterion, val_loader, epoch, config, writer):
             else:
                 raise ValueError(f"Unsupported model output type: {type(outputs)}")
 
-            # Use pulse if required by loss
             if isinstance(criterion, DiceFocalWithPulsePriorLoss):
                 loss = criterion(logits, targets, pulses)
             else:
@@ -208,19 +224,18 @@ def validate_one_epoch(model, criterion, val_loader, epoch, config, writer):
 
             total_val_loss += loss.item()
 
-            preds = get_binary_segmentation_predictions(model, data)  # [B, H, W]
-
+            # Metric computation: strip channel dim from targets
             if targets.ndim == 4 and targets.shape[1] == 1:
                 targets = targets.squeeze(1)
-            elif targets.ndim != 3:
-                raise ValueError(f"Unexpected targets shape: {targets.shape}")
 
-            batch_metrics = calculate_all_metrics(preds, targets)
+            # Pass raw logits and clean targets to the metric function
+            batch_metrics = calculate_all_metrics(logits, targets)
             batch_metrics_list.append(batch_metrics)
+
             loop.set_postfix(loss=loss.item())
 
     if not batch_metrics_list:
-        return total_val_loss / num_batches, {}
+        return total_val_loss / max(num_batches, 1), {}
 
     metrics_df = pd.DataFrame(batch_metrics_list)
     avg_metrics_dict = metrics_df.mean(axis=0).to_dict()
@@ -232,7 +247,6 @@ def validate_one_epoch(model, criterion, val_loader, epoch, config, writer):
             writer.add_scalar(f"Metrics/{key}", value, epoch)
 
     return avg_val_loss, avg_metrics_dict
-
 
 
 def save_checkpoint(model, optimizer, filename):
@@ -429,15 +443,21 @@ def recover_original(img, final_width=1024, final_height=256, cropped_width=750,
     pad_bottom = final_height - cropped_height - pad_top
     return ImageOps.expand(img_resized, (pad_left, pad_top, pad_right, pad_bottom), fill=0)
 
-def extract_pulse_number(path):
-    return int(path.split('US')[1].split('_')[0])
-
 
 def visualize_predictions(model, val_loader, config, epoch, writer, num_samples=10):
+    import re
     model.eval()
     images_shown = 0
     save_dir = os.path.join("logs", config.EXPERIMENT_NAME, "visualizations")
     os.makedirs(save_dir, exist_ok=True)
+
+    # --- Shared pulse extractor ---
+    def extract_pulse_number(path):
+        base = os.path.basename(path)
+        match = re.search(r'US(\d+)', base)
+        if not match:
+            raise ValueError(f"Pulse number could not be extracted from path: {path}")
+        return int(match.group(1))
 
     with torch.no_grad():
         for batch_data in val_loader:
@@ -446,7 +466,7 @@ def visualize_predictions(model, val_loader, config, epoch, writer, num_samples=
             if not isinstance(batch_data, (list, tuple)) or len(batch_data) != 5:
                 continue
 
-            data, targets, orig_imgs, _, filenames = batch_data
+            data, targets, _, image_paths,_ = batch_data
             data = data.to(config.DEVICE)
 
             preds_binary = get_binary_segmentation_predictions(model, data).cpu()
@@ -458,7 +478,7 @@ def visualize_predictions(model, val_loader, config, epoch, writer, num_samples=
                 img_tensor = data[i].cpu()
                 pred_tensor = preds_binary[i].cpu()
                 gt_tensor = targets[i].cpu()
-                img_path = filenames[i]
+                img_path = image_paths[i]  # ✅ Always extract pulse from image path
 
                 input_img = TF.to_pil_image(img_tensor)
                 pred_pil = TF.to_pil_image(pred_tensor.byte() * 255)
@@ -468,7 +488,7 @@ def visualize_predictions(model, val_loader, config, epoch, writer, num_samples=
                 gt_restored = recover_original(gt_pil)
                 input_restored = recover_original(input_img.convert("L"))
 
-                pulse = extract_pulse(img_path)
+                pulse = extract_pulse_number(img_path)
                 fig, axes = plt.subplots(1, 3, figsize=(15, 5))
                 for idx, (ax, im) in enumerate(zip(axes, [input_restored, pred_restored, gt_restored])):
                     ax.imshow(im, cmap='gray' if im.mode == 'L' else None)
@@ -485,7 +505,6 @@ def visualize_predictions(model, val_loader, config, epoch, writer, num_samples=
                 plt.savefig(save_path, bbox_inches='tight', dpi=150)
                 plt.close(fig)
                 images_shown += 1
-
 
 if __name__ == "__main__":
     main()

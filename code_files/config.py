@@ -32,10 +32,10 @@ class Config:
 
     # Loss
     # Options: DiceFocalLoss, DiceLoss, AsymmetricFocalTverskyLoss
-    LOSS_FN = os.getenv("LOSS_FN", "DiceFocalWithPulsePriorLoss")
-    LOSS_DICE_WEIGHT = os.getenv("LOSS_DICE_WEIGHT", 0.4)
+    LOSS_FN = os.getenv("LOSS_FN", "DiceFocalLoss")
+    LOSS_DICE_WEIGHT = os.getenv("LOSS_DICE_WEIGHT", 0.5)
     LOSS_TVERSKY_WEIGHT = os.getenv("LOSS_TVERSKY_WEIGHT", 0.5)
-    LOSS_FOCAL_WEIGHT = os.getenv("LOSS_FOCAL_WEIGHT", 0.3)
+    LOSS_FOCAL_WEIGHT = os.getenv("LOSS_FOCAL_WEIGHT", 0.6)
 
     # Early stopping settings
     EARLY_STOPPING = True

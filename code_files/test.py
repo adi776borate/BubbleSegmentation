@@ -127,7 +127,6 @@ def main():
         for imgs, masks, orig_imgs, _, _ in tqdm(test_loader, desc="Running inference", unit="batch"):
             imgs, masks = imgs.to(config.DEVICE), masks.to(config.DEVICE)
             preds = get_binary_segmentation_predictions(model, imgs)
-
             for i in range(imgs.size(0)):
                 img_path     = test_dataset.image_paths[len(all_samples)]
                 label_path   = test_dataset.label_paths[len(all_samples)]
@@ -144,8 +143,7 @@ def main():
                 # === Unified metric inputs ===
                 # With recovery
                 pred_tensor = TF.to_tensor(recover_original(TF.to_pil_image(pred_cpu.byte() * 255))).squeeze(0).long()
-                gt_tensor   = TF.to_tensor(recover_original(TF.to_pil_image(gt_cpu.byte() * 255))).squeeze(0).long()
-
+                gt_tensor   = TF.to_tensor(recover_original(TF.to_pil_image(gt_cpu.byte() * 255))).squeeze(0).long()                
                 # Without recovery
                 # pred_tensor = pred_cpu.long()
                 # gt_tensor   = gt_cpu.long()
@@ -156,7 +154,7 @@ def main():
                 metrics['Filename'] = filename
 
                 # === Compute ablation area in mm² ===
-                pixel_area_mm2 = 0.001
+                pixel_area_mm2 = 0.0025
                 metrics['pred_area_mm2'] = compute_area(pred_tensor) * pixel_area_mm2
                 metrics['gt_area_mm2']    = compute_area(gt_tensor) * pixel_area_mm2
                 individual_metrics.append(metrics)

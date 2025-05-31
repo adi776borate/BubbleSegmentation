@@ -49,12 +49,9 @@ def compute_mean_bf_score(preds, targets, tolerance=2):
 # --- Hausdorff Distance ---
 def compute_hausdorff(preds, targets):
     mean_hd, max_hd = [], []
-    skipped = 0
-
     for i in range(preds.shape[0]):
-        # FIXED: remove [0] indexing
-        p = preds[i].astype(np.bool_)
-        t = targets[i].astype(np.bool_)
+        p = preds[i, 0].astype(np.bool_)
+        t = targets[i, 0].astype(np.bool_)
 
         pred_boundary = get_boundary(p)
         target_boundary = get_boundary(t)
@@ -63,8 +60,8 @@ def compute_hausdorff(preds, targets):
         t_coords = np.argwhere(target_boundary)
 
         if p_coords.size == 0 or t_coords.size == 0:
-            skipped += 1
             continue
+
 
         try:
             hd1 = directed_hausdorff(p_coords, t_coords)[0]
@@ -75,15 +72,12 @@ def compute_hausdorff(preds, targets):
             dist2 = cdist(t_coords, p_coords).min(axis=1)
             mean_hd.append((dist1.mean() + dist2.mean()) / 2)
         except Exception as e:
-            raise RuntimeError(f"Hausdorff calculation failed for sample {i}: {e}")
+            warnings.warn(f"Hausdorff calculation failed: {e}")
 
-    if not mean_hd or not max_hd:
-        raise ValueError(
-            f"Hausdorff computation failed for all {preds.shape[0]} samples. "
-            f"Possible causes: all-empty predictions, incorrect shape, or broken mask."
-        )
-
-    return float(np.mean(mean_hd)), float(np.mean(max_hd))
+    return (
+        float(np.nanmean(mean_hd)) if mean_hd else -1.0,
+        float(np.nanmean(max_hd)) if max_hd else -1.0,
+    )
 
 # --- Per-class metrics ---
 def compute_class_metrics(y_true, y_pred, class_val, epsilon=1e-7):
@@ -107,19 +101,18 @@ def compute_class_metrics(y_true, y_pred, class_val, epsilon=1e-7):
 
 # --- Main Metric Function ---
 def calculate_all_metrics(predictions, targets, threshold=0.5):
-    # Ensure shape is [B, H, W]
+    # Shape fix
     if predictions.ndim == 4 and predictions.shape[1] == 1:
-        predictions = predictions[:, 0]
+        predictions = predictions.squeeze(1)
+    elif predictions.ndim == 4 and predictions.shape[1] == 2:
+        predictions = torch.argmax(predictions, dim=1)
+
     if targets.ndim == 4 and targets.shape[1] == 1:
-        targets = targets[:, 0]
+        targets = targets.squeeze(1)
 
-    assert predictions.shape == targets.shape and predictions.ndim == 3, "Expecting [B, H, W] for both predictions and targets"
+    assert predictions.shape == targets.shape, f"Shape mismatch: {predictions.shape} vs {targets.shape}"
 
-
-    probs = torch.sigmoid(predictions)
-    preds_bin = (probs > threshold).int()
-    
-    preds_np = preds_bin.cpu().numpy()
+    preds_np = predictions.cpu().numpy()
     targets_np = targets.cpu().numpy()
 
     y_true_flat = targets_np.flatten()
@@ -131,7 +124,7 @@ def calculate_all_metrics(predictions, targets, threshold=0.5):
     class_accuracies, class_ious, class_dices = [], [], []
     class_precisions, class_recalls, class_f1s = [], [], []
     weighted_ious = []
-    TP_sum, FP_sum, FN_sum = 0, 0, 0
+    TP_sum = FP_sum = FN_sum = 0
 
     for cls in class_ids:
         acc, iou, dice, prec, rec, f1, TP, FP, FN = compute_class_metrics(y_true_flat, y_pred_flat, cls)
@@ -141,8 +134,7 @@ def calculate_all_metrics(predictions, targets, threshold=0.5):
         class_precisions.append(prec)
         class_recalls.append(rec)
         class_f1s.append(f1)
-        class_px_count = np.sum(y_true_flat == cls)
-        weighted_ious.append(iou * class_px_count)
+        weighted_ious.append(iou * np.sum(y_true_flat == cls))
         TP_sum += TP
         FP_sum += FP
         FN_sum += FN
@@ -158,11 +150,9 @@ def calculate_all_metrics(predictions, targets, threshold=0.5):
     mean_hd, max_hd = compute_hausdorff(preds_np, targets_np)
 
     try:
+        probs = torch.softmax(predictions, dim=1)[:, 1, :, :]  # [B, H, W]
         probs_flat = probs.detach().cpu().numpy().flatten()
-        if len(np.unique(y_true_flat)) > 1:
-            auroc = roc_auc_score(y_true_flat, probs_flat)
-        else:
-            auroc = 0.5
+        auroc = roc_auc_score(y_true_flat, probs_flat) if len(np.unique(y_true_flat)) > 1 else 0.5
     except Exception as e:
         warnings.warn(f"AUROC computation failed: {e}")
         auroc = 0.5

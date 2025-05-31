@@ -48,7 +48,7 @@ class FocalLoss(nn.Module):
             return focal
 
 class DiceFocalWithPulsePriorLoss(nn.Module):
-    def __init__(self, dice_weight=0.5, focal_weight=0.6, prior_weight=0.3, alpha=0.1, beta=50):
+    def __init__(self, dice_weight=0.5, focal_weight=0.6, prior_weight=0.35, alpha=0.15, beta=70):
         super().__init__()
         self.dice = DiceLoss()
         self.focal = FocalLoss(gamma=2.0)
