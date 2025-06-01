@@ -5,7 +5,6 @@ import torch
 class Config:
     # General
     IN_CHANNELS = 3
-    IMAGE_SIZE = (1024, 256)
     NUM_CLASSES = 2
 
     IMAGE_DIR = "../Data/US_2"
@@ -32,7 +31,7 @@ class Config:
 
     # Loss
     # Options: DiceFocalLoss, DiceLoss, AsymmetricFocalTverskyLoss
-    LOSS_FN = os.getenv("LOSS_FN", "DiceFocalLoss")
+    LOSS_FN = os.getenv("LOSS_FN", "DiceFocalWithPulsePriorLoss")
     LOSS_DICE_WEIGHT = os.getenv("LOSS_DICE_WEIGHT", 0.5)
     LOSS_TVERSKY_WEIGHT = os.getenv("LOSS_TVERSKY_WEIGHT", 0.5)
     LOSS_FOCAL_WEIGHT = os.getenv("LOSS_FOCAL_WEIGHT", 0.6)

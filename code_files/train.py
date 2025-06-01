@@ -111,7 +111,7 @@ def get_loss_fn(config):
         print(f"DiceLoss")
     
     elif loss_fn_name == "DiceFocalWithPulsePriorLoss":
-        criterion = DiceFocalLoss()
+        criterion = DiceFocalWithPulsePriorLoss()
         print(f"DiceFocalWithPulsePriorLoss")
 
     elif loss_fn_name == "AsymmetricFocalTverskyLoss":
@@ -381,7 +381,6 @@ def main():
     # --- Training Loop ---
     best_val_loss = float('inf')
     best_val_iou = 0
-    epochs_no_improve = 0 # Counter for early stopping
 
     for epoch in range(config.NUM_EPOCHS):
         train_loss = train_one_epoch(model, optimizer, criterion, train_loader, epoch, config, writer)

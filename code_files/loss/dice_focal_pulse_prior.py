@@ -62,7 +62,8 @@ class DiceFocalWithPulsePriorLoss(nn.Module):
         # pulse_values: (B,)
         # Output: (B, H, W)
         prior_probs = torch.sigmoid(self.alpha * (pulse_values.view(-1, 1, 1) - self.beta))  # (B, 1, 1)
-        return prior_probs.expand(shape[0], shape[2], shape[3])  # (B, H, W)
+        assert len(shape) == 3, f"Expected 3D shape (B, H, W), but got {shape}"
+        return prior_probs.expand(shape[0], shape[1], shape[2])  # (B, H, W)
 
     def forward(self, preds, targets, pulses):
         # preds: [B, 2, H, W], targets: [B, 1, H, W] or [B, H, W]
